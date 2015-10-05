@@ -3,15 +3,12 @@
 #include <math.h>
 
 #define TEMP_SENSOR 0x27
-#define FAN_PIN     A0
 #define HEAT_PIN    A1
 #define POT_PIN     A2
-#define PIR_PIN     A3
 #define DESIRED_TEMP_FLASH_ADDRESS 0x80000
 
 Adafruit_8x8matrix matrix1;
 Adafruit_8x8matrix matrix2;
-Adafruit_8x8matrix matrix3;
 
 static const uint8_t smile[] = {
   0b00111100,
@@ -27,8 +24,6 @@ static const uint8_t smile[] = {
 int currentTemperature = 0;
 int desiredTemperature = 0;
 bool isHeatOn = false;
-bool isFanOn = false;
-bool motionDetected = false;
 
 int lastChangedPot = -80;
 
@@ -41,6 +36,7 @@ void displayTemperature(void)
   matrix1.setCursor(0, 0);
   matrix1.write(tens + '0');
   matrix1.writeDisplay();
+
 
   matrix2.clear();
   matrix2.setCursor(0, 0);
@@ -102,27 +98,22 @@ void setup()
 
   matrix1.begin(0x70);
   matrix2.begin(0x71);
-  matrix3.begin(0x72);
 
   setupMatrix(matrix1);
   setupMatrix(matrix2);
-  setupMatrix(matrix3);
 
   Spark.function("set_temp", setTemperatureFromString);
 
   Spark.variable("current_temp", &currentTemperature, INT);
   Spark.variable("desired_temp", &desiredTemperature, INT);
   Spark.variable("is_heat_on", &isHeatOn, BOOLEAN);
-  Spark.variable("is_fan_on", &isFanOn, BOOLEAN);
 
   Serial.begin(9600);
 
   loadTemperature();
 
-  pinMode(FAN_PIN, OUTPUT);
   pinMode(HEAT_PIN, OUTPUT);
   pinMode(POT_PIN, INPUT);
-  pinMode(PIR_PIN, INPUT);
 }
 
 void loop()
@@ -135,7 +126,7 @@ void loop()
     Wire.beginTransmission(TEMP_SENSOR);
     Wire.endTransmission();
     delay(40);
-    Wire.requestFrom(TEMP_SENSOR, 4);
+    Wire.requestFrom(TEMP_SENSOR, 4); // request 4 bytes information
     uint8_t b = Wire.read();
     Serial.print("I2C Status bits are ");
     Serial.println(b >> 6);
@@ -161,25 +152,18 @@ void loop()
   {
     Serial.print("Potentiometer reading: ");
     Serial.println(pot);
-
-    Serial.print("PIR reading: ");
-    Serial.println(analogRead(PIR_PIN));
   }
 
-  if (3550 < analogRead(PIR_PIN))
-  {
-    motionDetected = true;
-    // lean more toward comfort than energy efficiency
-  }
 
   // If user has adjusted the potentiometer
-  if (fabsf(pot - lastChangedPot) > 64)
+  if (fabsf(pot - lastChangedPot) > 16)  // adjust from 64 because my range is 1214 not 4095
   {
     // Don't set temp on boot
     if (lastChangedPot >= 0)
     {
       // map 0-4095 pot range to 50-90 temperature range
-      int t = roundf(pot * (40.0/4095.0) + 50.0);
+	  // my pot puts out 0 - 1214 observed using Tinker
+      int t = roundf(pot * (40.0/1214.0) + 50.0);
       setTemperature(t);
       Serial.print("Setting desired temp based on potentiometer to ");
       Serial.println(t);
@@ -189,10 +173,6 @@ void loop()
 
   isHeatOn = desiredTemperature > currentTemperature;
   digitalWrite(HEAT_PIN, isHeatOn);
-
-  // just run them at the same time for now
-  isFanOn = isHeatOn;
-  digitalWrite(FAN_PIN, isFanOn);
 
   --wait;
 }
